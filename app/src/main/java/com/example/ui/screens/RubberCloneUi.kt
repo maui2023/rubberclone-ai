@@ -554,9 +554,11 @@ fun RegisterScreen(viewModel: RubberCloneViewModel) {
 // ==========================================
 // 4. MAIN SCAFFOLD & BOTTOM NAV
 // ==========================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScaffold(viewModel: RubberCloneViewModel, initialScreen: Screen) {
     var activeTab by remember { mutableStateOf(initialScreen) }
+    var showMenuSheet by remember { mutableStateOf(false) }
 
     // Selaraskan tab dengan perubahan skrin vm
     LaunchedEffect(viewModel.currentScreen) {
@@ -566,105 +568,294 @@ fun MainScaffold(viewModel: RubberCloneViewModel, initialScreen: Screen) {
         }
     }
 
+    // Bottom Sheet Menu Burger
+    if (showMenuSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showMenuSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Menu Lanjutan",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // Peta Lokasi
+                Surface(
+                    onClick = {
+                        showMenuSheet = false
+                        activeTab = Screen.PetaLokasi
+                        viewModel.currentScreen = Screen.PetaLokasi
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Map,
+                            contentDescription = "Peta",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                "Peta Lokasi Imbasan",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Lihat taburan geografi imbasan klon getah",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // AgroPintar
+                Surface(
+                    onClick = {
+                        showMenuSheet = false
+                        activeTab = Screen.CadanganPintar
+                        viewModel.currentScreen = Screen.CadanganPintar
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Memory,
+                            contentDescription = "AgroPintar",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                "AgroPintar AI",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Cadangan klon pintar berasaskan AI Gemini",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Direktori Klon
+                Surface(
+                    onClick = {
+                        showMenuSheet = false
+                        activeTab = Screen.CloneDirectory
+                        viewModel.currentScreen = Screen.CloneDirectory
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Biotech,
+                            contentDescription = "Direktori Klon",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                "Direktori Klon Hevea",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Ensiklopedia baka klon getah RISDA",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Log Keluar
+                Surface(
+                    onClick = {
+                        showMenuSheet = false
+                        viewModel.processLogout()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Logout,
+                            contentDescription = "Log Keluar",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            "Log Keluar",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing),
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+            Box(
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
             ) {
-                NavigationBarItem(
-                    selected = activeTab is Screen.Dashboard,
-                    onClick = {
-                        activeTab = Screen.Dashboard
-                        viewModel.currentScreen = Screen.Dashboard
-                    },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                    label = { Text("Dashboard", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
+                // Background navigation bar
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
+                ) {
+                    // 1. Dashboard
+                    NavigationBarItem(
+                        selected = activeTab is Screen.Dashboard,
+                        onClick = {
+                            activeTab = Screen.Dashboard
+                            viewModel.currentScreen = Screen.Dashboard
+                        },
+                        icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                        label = { Text("Dashboard", fontSize = 10.sp, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
 
-                NavigationBarItem(
-                    selected = activeTab is Screen.AnalisisKlon,
-                    onClick = {
-                        activeTab = Screen.AnalisisKlon
-                        viewModel.currentScreen = Screen.AnalisisKlon
-                    },
-                    icon = { Icon(Icons.Default.Camera, contentDescription = "Cam Scan") },
-                    label = { Text("Imbas AI", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
+                    // 2. Sejarah
+                    NavigationBarItem(
+                        selected = activeTab is Screen.SejarahAnalisis || activeTab is Screen.LaporanId,
+                        onClick = {
+                            activeTab = Screen.SejarahAnalisis
+                            viewModel.currentScreen = Screen.SejarahAnalisis
+                        },
+                        icon = { Icon(Icons.Default.History, contentDescription = "Sejarah") },
+                        label = { Text("Sejarah", fontSize = 10.sp, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
 
-                NavigationBarItem(
-                    selected = activeTab is Screen.SejarahAnalisis || activeTab is Screen.LaporanId,
-                    onClick = {
-                        activeTab = Screen.SejarahAnalisis
-                        viewModel.currentScreen = Screen.SejarahAnalisis
-                    },
-                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("Sejarah", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
+                    // 3. Spacer for center FAB
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = {},
+                        icon = { Spacer(modifier = Modifier.size(24.dp)) },
+                        label = { Text("") },
+                        enabled = false,
+                        colors = NavigationBarItemDefaults.colors(
+                            indicatorColor = Color.Transparent
+                        )
                     )
-                )
 
-                NavigationBarItem(
-                    selected = activeTab is Screen.PetaLokasi,
-                    onClick = {
-                        activeTab = Screen.PetaLokasi
-                        viewModel.currentScreen = Screen.PetaLokasi
-                    },
-                    icon = { Icon(Icons.Default.Map, contentDescription = "Map") },
-                    label = { Text("Peta", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
+                    // 4. Profil
+                    NavigationBarItem(
+                        selected = activeTab is Screen.ProfilPengguna,
+                        onClick = {
+                            activeTab = Screen.ProfilPengguna
+                            viewModel.currentScreen = Screen.ProfilPengguna
+                        },
+                        icon = { Icon(Icons.Default.Person, contentDescription = "Profil") },
+                        label = { Text("Profil", fontSize = 10.sp, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
 
-                NavigationBarItem(
-                    selected = activeTab is Screen.CadanganPintar,
-                    onClick = {
-                        activeTab = Screen.CadanganPintar
-                        viewModel.currentScreen = Screen.CadanganPintar
-                    },
-                    icon = { Icon(Icons.Default.Memory, contentDescription = "Saranan") },
-                    label = { Text("AgroPintar", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
+                    // 5. Menu (burger)
+                    NavigationBarItem(
+                        selected = activeTab is Screen.PetaLokasi || activeTab is Screen.CadanganPintar || activeTab is Screen.CloneDirectory,
+                        onClick = { showMenuSheet = true },
+                        icon = { Icon(Icons.Default.Menu, contentDescription = "Menu") },
+                        label = { Text("Menu", fontSize = 10.sp, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
+                }
 
-                NavigationBarItem(
-                    selected = activeTab is Screen.CloneDirectory || activeTab is Screen.ProfilPengguna,
-                    onClick = {
-                        activeTab = Screen.CloneDirectory
-                        viewModel.currentScreen = Screen.CloneDirectory
-                    },
-                    icon = { Icon(Icons.Default.Menu, contentDescription = "More") },
-                    label = { Text("Menu", fontSize = 10.sp, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary
-                    )
-                )
+                // Center FAB Camera Button (floating above the nav bar)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = (-22).dp)
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            activeTab = Screen.AnalisisKlon
+                            viewModel.currentScreen = Screen.AnalisisKlon
+                        },
+                        containerColor = Color(0xFFF59E0B),
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.size(64.dp),
+                        elevation = FloatingActionButtonDefaults.elevation(
+                            defaultElevation = 6.dp,
+                            pressedElevation = 10.dp
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = "Imbas Klon",
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
             }
         }
     ) { innerPadding ->
@@ -696,6 +887,7 @@ fun MainScaffold(viewModel: RubberCloneViewModel, initialScreen: Screen) {
         }
     }
 }
+
 
 // ==========================================
 // 5. DASHBOARD SCREEN
