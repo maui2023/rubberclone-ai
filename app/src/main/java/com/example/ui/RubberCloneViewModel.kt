@@ -50,16 +50,8 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
 
     // === UI Navigation & Authentication State ===
     var currentScreen by mutableStateOf<Screen>(Screen.Splash)
-    var currentUserEmail by mutableStateOf<String?>("ahmad@risda.gov.my")
-    var currentUser by mutableStateOf<UserEntity?>(
-        UserEntity(
-            email = "ahmad@risda.gov.my",
-            username = "Ahmad RISDA",
-            passwordHash = "123456",
-            fullname = "En. Ahmad Bin Ismail",
-            agency = "RISDA Daerah Seremban"
-        )
-    )
+    var currentUserEmail by mutableStateOf<String?>(null)
+    var currentUser by mutableStateOf<UserEntity?>(null)
 
     // Form inputs
     var loginEmail by mutableStateOf("")
@@ -124,9 +116,7 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
                 // Selaraskan data imbasan terkini dari server
                 repository.syncListScans(savedEmail)
             }
-            currentScreen = Screen.Dashboard
         } else {
-            currentScreen = Screen.Login
             currentUserEmail = null
             currentUser = null
         }
@@ -186,12 +176,6 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
                 repository.insertAnalysis(mock1)
                 repository.insertAnalysis(mock2)
                 repository.insertAnalysis(mock3)
-            }
-            if (currentUserEmail == null) {
-                // Tiada active session, tapi kita benarkan carian ahmad sbg fallback awal
-                currentUserEmail = defaultUser.email
-                currentUser = repository.getUserByEmail(defaultUser.email) ?: defaultUser
-                currentScreen = Screen.Dashboard
             }
         }
     }

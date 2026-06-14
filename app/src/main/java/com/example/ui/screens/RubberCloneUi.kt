@@ -71,7 +71,12 @@ fun RubberCloneApp(viewModel: RubberCloneViewModel) {
             when (screen) {
                 is Screen.Splash -> SplashScreen(
                     onTimeout = {
-                        viewModel.currentScreen = Screen.Dashboard
+                        val savedEmail = viewModel.currentUserEmail
+                        if (savedEmail != null) {
+                            viewModel.currentScreen = Screen.Dashboard
+                        } else {
+                            viewModel.currentScreen = Screen.Login
+                        }
                     }
                 )
                 is Screen.Login -> LoginScreen(viewModel)
@@ -123,48 +128,37 @@ fun SplashScreen(onTimeout: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(24.dp)
         ) {
-            // Logo Getah Pintar RISDA dalam bentuk Vector
-            Box(
+            Image(
+                painter = painterResource(id = com.example.R.drawable.risda_logo),
+                contentDescription = "RISDA Logo",
                 modifier = Modifier
-                    .size(110.dp)
+                    .size(140.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Eco,
-                    contentDescription = "RISDA Leaf Logo",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(60.dp)
-                )
-            }
+                    .background(Color.White.copy(alpha = 0.1f))
+                    .border(2.dp, Color(0xFFF59E0B), CircleShape),
+                contentScale = ContentScale.Fit
+            )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             Text(
-                text = "RUBBERCLONE AI",
-                style = MaterialTheme.typography.headlineLarge,
+                text = "Sistem Pengecaman\nKlon Pokok Getah",
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 2.sp
-            )
-
-            Text(
-                text = "Sistem Pengecaman Klon Pokok Getah Negara",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp)
+                lineHeight = 32.sp
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                text = "RISDA Malaysia 2026",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                text = "RISDA BESUT",
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(top = 16.dp)
+                color = Color(0xFFF59E0B),
+                letterSpacing = 1.5.sp,
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(60.dp))
@@ -217,28 +211,33 @@ fun LoginScreen(viewModel: RubberCloneViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Eco,
-                contentDescription = "Logo",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(72.dp)
+            Image(
+                painter = painterResource(id = com.example.R.drawable.risda_logo),
+                contentDescription = "RISDA Logo",
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .border(1.5.dp, Color(0xFFF59E0B), CircleShape),
+                contentScale = ContentScale.Fit
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Pekebun RISDA Portal",
-                style = MaterialTheme.typography.headlineMedium,
+                text = "Sistem Pengecaman Klon Pokok Getah",
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
             )
 
             Text(
-                text = "Log masuk akreditasi agensi RubberClone AI",
+                text = "RISDA BESUT - Log Masuk Pengguna",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFFF59E0B),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 32.dp)
+                modifier = Modifier.padding(top = 4.dp, bottom = 32.dp)
             )
 
             if (viewModel.loginError.isNotEmpty()) {
@@ -364,26 +363,15 @@ fun LoginScreen(viewModel: RubberCloneViewModel) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Pengguna Baharu?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(
-                    onClick = { viewModel.currentScreen = Screen.Register }
-                ) {
-                    Text(
-                        text = "Daftar Akaun Di Sini",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+            Text(
+                text = "Akaun pengguna hanya boleh ditambah oleh Pentadbir RISDA melalui portal web.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            )
         }
     }
 }
