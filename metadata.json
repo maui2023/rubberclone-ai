@@ -1,6 +1,8 @@
 {
-  "name": "RubberClone AI",
+  "name": "Rubber Clone AI",
   "description": "Aplikasi pengecaman dan analisis klon getah RISDA Malaysia menggunakan AI imej daun.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

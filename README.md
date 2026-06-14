@@ -1,21 +1,70 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+  <img src="assets/banner.png" width="1200" height="475" alt="Rubber Clone AI Banner" onError="this.style.display='none';" />
+  <h1>Rubber Clone AI</h1>
+  <p>Aplikasi Pengecaman & Analisis Klon Getah RISDA Malaysia Menggunakan Google Gemini AI</p>
 </div>
 
-# Run and deploy your AI Studio app
+---
 
-This contains everything you need to run your app locally.
+**Rubber Clone AI** ialah aplikasi mudah alih pintar Android yang direka khusus untuk membantu pekebun kecil RISDA dan pegawai lapangan mengenalpasti klon pokok getah secara automatik melalui imbasan imej daun getah. Sistem ini memanfaatkan kuasa **Google Gemini AI** (melalui Gemini API) untuk menganalisis morfologi daun dan memberikan maklumat agronomi klon getah yang tepat.
 
-View your app in AI Studio: https://ai.studio/apps/fff1f453-44a4-4cbb-ad2e-40c0fc9afb7b
+## Ciri-ciri Utama
 
-## Run Locally
+- **Imbasan Kamera Pintar**: Ambil gambar daun pokok getah secara langsung menggunakan kamera peranti atau muat naik dari galeri.
+- **Pengecaman Berasaskan AI**: Menganalisis corak, urat, bentuk, dan ciri fizikal daun menggunakan model multimodal Google Gemini AI.
+- **Pangkalan Data Klon Getah RISDA**: Paparan maklumat lengkap agronomi klon seperti potensi hasil susu, ketahanan penyakit, dan kesesuaian kawasan penanaman.
+- **Sejarah Imbasan Tempatan**: Menyimpan sejarah imbasan terdahulu pada peranti untuk rujukan pantas.
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+---
 
+## Prasyarat Pembangunan
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+Sebelum menjalankan projek ini, pastikan persekitaran pembangunan anda mempunyai:
+
+1. **Android Studio** (Versi terkini disyorkan)
+2. **JDK 17** (Pastikan `JAVA_HOME` dikonfigurasikan dengan betul)
+3. **Android SDK (API 36 / 36.1)**
+4. **Kunci API Gemini (Gemini API Key)** dari Google AI Studio
+
+---
+
+## Cara Menjalankan Projek Secara Tempatan
+
+### 1. Klon Repositori
+Dapatkan kod sumber ke komputer tempatan anda.
+
+### 2. Konfigurasi Fail `.env`
+Bina fail bernama `.env` di dalam direktori utama projek ini dan masukkan kunci API Gemini anda:
+```env
+GEMINI_API_KEY=KUNCI_API_GEMINI_ANDA_DI_SINI
+```
+
+### 3. Sediakan Pengkompilan (Build)
+Pastikan anda membuang atau menyahaktifkan konfigurasi tandatangan debug tersuai dalam `app/build.gradle.kts` jika anda tidak mempunyai fail `.keystore` fizikal di direktori utama:
+```kotlin
+// Buang atau ulas baris ini di dalam blok buildTypes -> debug:
+// signingConfig = signingConfigs.getByName("debugConfig")
+```
+
+### 4. Kompilasi APK Menggunakan Gradle
+Buka terminal di direktori utama projek dan jalankan arahan berikut untuk membina APK debug:
+```bash
+# Untuk Linux/macOS
+JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+
+# Untuk Windows
+set JAVA_HOME=C:\path\to\jdk-17
+gradlew.bat assembleDebug
+```
+APK yang dihasilkan akan berada di: `app/build/outputs/apk/debug/app-debug.apk`.
+
+### 5. Pasang dan Jalankan pada Emulator/Peranti
+Jika anda mempunyai peranti atau emulator yang aktif (contoh: `emulator-5554`), pasang APK dengan arahan adb:
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
+## Hubungi & Maklum Balas
+Untuk maklumat lanjut mengenai pengurusan klon getah dan panduan RISDA, sila layari portal rasmi [RISDA Malaysia](https://www.risda.gov.my).
