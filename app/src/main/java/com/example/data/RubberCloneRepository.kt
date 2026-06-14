@@ -3,10 +3,20 @@ package com.example.data
 import android.graphics.Bitmap
 import android.util.Log
 import com.example.api.GeminiClient
+import com.example.api.*
 import kotlinx.coroutines.flow.Flow
-import org.json.JSONObject
+import kotlinx.coroutines.flow.flowOf
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.FileOutputStream
 
-class RubberCloneRepository(private val dao: RubberCloneDao) {
+class RubberCloneRepository(
+    private val dao: RubberCloneDao,
+    private val api: BackendService
+) {
     private val TAG = "RubberRepository"
 
     // === Database Operations ===
@@ -64,7 +74,6 @@ class RubberCloneRepository(private val dao: RubberCloneDao) {
                 rainfall = clone.annualRainfallNeeded,
                 elevation = clone.maxElevation
             )
-            dao.insertAnalysis(record)
             return record
         }
 
@@ -93,7 +102,6 @@ class RubberCloneRepository(private val dao: RubberCloneDao) {
                     rainfall = rainfallNeeded,
                     elevation = maxElev
                 )
-                dao.insertAnalysis(record)
                 return record
             } catch (e: Exception) {
                 Log.e(TAG, "Ralat parsing data Gemini: ${e.message}. Menggunakan enjin luar talian.")
@@ -115,7 +123,6 @@ class RubberCloneRepository(private val dao: RubberCloneDao) {
             rainfall = randomClone.annualRainfallNeeded,
             elevation = randomClone.maxElevation
         )
-        dao.insertAnalysis(mockRecord)
         return mockRecord
     }
 
@@ -184,5 +191,122 @@ class RubberCloneRepository(private val dao: RubberCloneDao) {
         builder.append("- **Pembajaan Utama**: Guna baja NPK gred RISDA Campuran 12:12:17:2 + TE sebanyak 3 pusingan setahun untuk memastikan tumbesaran kanopi seimbang.\n")
 
         return builder.toString()
+    }
+
+    // === API Network Synchronization ===
+
+    suspend fun apiRegister(request: RegisterRequest): RegisterResponse {
+        return try {
+            val response = api.register(request)
+            if (response.isSuccessful && response.body() != null) {
+                response.body()!!
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "Ralat pendaftaran"
+                RegisterResponse("error", errorMsg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sambungan register: ${e.message}")
+            RegisterResponse("error", "Tiada sambungan pelayan: ${e.message}")
+        }
+    }
+
+    suspend fun apiLogin(request: LoginRequest): LoginResponse {
+        return try {
+            val response = api.login(request)
+            if (response.isSuccessful && response.body() != null) {
+                response.body()!!
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "E-mel atau kata laluan salah"
+                LoginResponse("error", null, null, errorMsg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sambungan login: ${e.message}")
+            LoginResponse("error", null, null, "Tiada sambungan pelayan: ${e.message}")
+        }
+    }
+
+    suspend fun apiUploadScan(
+        record: AnalysisEntity,
+        imageFile: File?
+    ): UploadResponse? {
+        return try {
+            val cloneNameBody = record.cloneName.toRequestBody("text/plain".toMediaTypeOrNull())
+            val confidenceBody = record.confidence.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+            val timestampBody = record.timestamp.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+            val latitudeBody = record.latitude.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+            val longitudeBody = record.longitude.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+            val locationNameBody = record.locationName.toRequestBody("text/plain".toMediaTypeOrNull())
+            val notesBody = record.notes.toRequestBody("text/plain".toMediaTypeOrNull())
+            val soilTypeBody = record.soilType.toRequestBody("text/plain".toMediaTypeOrNull())
+            val rainfallBody = record.rainfall.toRequestBody("text/plain".toMediaTypeOrNull())
+            val elevationBody = record.elevation.toRequestBody("text/plain".toMediaTypeOrNull())
+
+            val imagePart = imageFile?.let {
+                val reqFile = it.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                MultipartBody.Part.createFormData("image", it.name, reqFile)
+            }
+
+            val response = api.uploadScan(
+                cloneNameBody, confidenceBody, timestampBody, latitudeBody, longitudeBody,
+                locationNameBody, notesBody, soilTypeBody, rainfallBody, elevationBody, imagePart
+            )
+
+            if (response.isSuccessful) {
+                response.body()
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "Gagal muat naik"
+                Log.e(TAG, "Ralat upload: $errorMsg")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sambungan upload: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun syncListScans(userId: String) {
+        try {
+            val response = api.listScans()
+            if (response.isSuccessful && response.body()?.status == "success") {
+                val list = response.body()?.data ?: emptyList()
+                // Masukkan rekod baru/kemas kini dari server ke DB tempatan
+                list.forEach { dto ->
+                    val entity = AnalysisEntity(
+                        id = dto.id,
+                        userId = userId,
+                        cloneName = dto.clone_name,
+                        confidence = dto.confidence,
+                        timestamp = dto.timestamp,
+                        latitude = dto.latitude,
+                        longitude = dto.longitude,
+                        locationName = dto.location_name,
+                        imageUrl = dto.image_url,
+                        notes = dto.notes,
+                        soilType = dto.soil_type,
+                        rainfall = dto.rainfall,
+                        elevation = dto.elevation
+                    )
+                    dao.insertAnalysis(entity)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sync list: ${e.message}")
+        }
+    }
+
+    suspend fun apiDeleteScan(id: Int) {
+        try {
+            api.deleteScan(id)
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sambungan delete: ${e.message}")
+        }
+    }
+
+    suspend fun apiClearScans() {
+        try {
+            api.clearScans()
+        } catch (e: Exception) {
+            Log.e(TAG, "Ralat sambungan clear: ${e.message}")
+        }
     }
 }

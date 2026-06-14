@@ -18,6 +18,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.api.*
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -42,8 +43,10 @@ sealed interface Screen {
 @OptIn(ExperimentalCoroutinesApi::class)
 class RubberCloneViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "RubberViewModel"
+    private val apiService = RetrofitClient.getApiService(application)
     private val db = RubberCloneDatabase.getDatabase(application)
-    private val repository = RubberCloneRepository(db.rubberCloneDao())
+    private val repository = RubberCloneRepository(db.rubberCloneDao(), apiService)
+    private val sessionManager = SessionManager(application)
 
     // === UI Navigation & Authentication State ===
     var currentScreen by mutableStateOf<Screen>(Screen.Splash)
@@ -111,7 +114,24 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
     var activeReportRecord by mutableStateOf<AnalysisEntity?>(null)
 
     init {
-        // Pre-create a demo RISDA user so they can login immediately or test without signing up!
+        // Semak session sedia ada pada permulaan
+        val savedEmail = sessionManager.fetchUserEmail()
+        val savedToken = sessionManager.fetchAuthToken()
+        if (!savedEmail.isNullOrEmpty() && !savedToken.isNullOrEmpty()) {
+            currentUserEmail = savedEmail
+            viewModelScope.launch {
+                currentUser = repository.getUserByEmail(savedEmail)
+                // Selaraskan data imbasan terkini dari server
+                repository.syncListScans(savedEmail)
+            }
+            currentScreen = Screen.Dashboard
+        } else {
+            currentScreen = Screen.Login
+            currentUserEmail = null
+            currentUser = null
+        }
+
+        // Pre-create a demo RISDA user so they can login offline immediately
         viewModelScope.launch {
             val defaultUser = UserEntity(
                 email = "ahmad@risda.gov.my",
@@ -167,7 +187,12 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
                 repository.insertAnalysis(mock2)
                 repository.insertAnalysis(mock3)
             }
-            currentUser = repository.getUserByEmail(defaultUser.email) ?: defaultUser
+            if (currentUserEmail == null) {
+                // Tiada active session, tapi kita benarkan carian ahmad sbg fallback awal
+                currentUserEmail = defaultUser.email
+                currentUser = repository.getUserByEmail(defaultUser.email) ?: defaultUser
+                currentScreen = Screen.Dashboard
+            }
         }
     }
 
@@ -177,17 +202,33 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
             loginError = "Sila isi kedua-dua e-mel dan kata laluan."
             return
         }
+        loginError = ""
         viewModelScope.launch {
-            val user = repository.getUserByEmail(loginEmail.trim())
-            if (user != null && user.passwordHash == loginPassword) {
-                currentUserEmail = user.email
-                currentUser = user
-                loginError = ""
-                // Ganti skrin ke dashboard
+            val response = repository.apiLogin(LoginRequest(loginEmail.trim(), loginPassword))
+            if (response.status == "success" && response.token != null && response.user != null) {
+                // Simpan token & e-mel session
+                sessionManager.saveAuthToken(response.token)
+                sessionManager.saveUserEmail(response.user.email)
+                
+                // Masukkan/kemas kini user ke local database
+                val localUser = UserEntity(
+                    email = response.user.email,
+                    username = response.user.username,
+                    passwordHash = loginPassword,
+                    fullname = response.user.fullname,
+                    agency = response.user.agency
+                )
+                repository.insertUser(localUser)
+                
+                // Selaraskan imbasan dari server
+                repository.syncListScans(response.user.email)
+                
+                currentUserEmail = response.user.email
+                currentUser = localUser
                 currentScreen = Screen.Dashboard
-                loginPassword = "" // clear security
+                loginPassword = ""
             } else {
-                loginError = "E-mel atau kata laluan tidak sah."
+                loginError = response.message ?: "E-mel atau kata laluan tidak sah."
             }
         }
     }
@@ -197,37 +238,35 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
             regError = "Sila lengkapkan semua butiran borang."
             return
         }
+        regError = ""
         viewModelScope.launch {
-            val existing = repository.getUserByEmail(regEmail.trim())
-            if (existing != null) {
-                regError = "E-mel pengguna sudah didaftarkan."
-                return@launch
-            }
-
-            val newUser = UserEntity(
+            val request = RegisterRequest(
                 email = regEmail.trim(),
                 username = regUsername.trim(),
-                passwordHash = regPassword,
+                password = regPassword,
                 fullname = regFullname.trim(),
                 agency = regAgency
             )
-            repository.insertUser(newUser)
-            
-            // Auto login selepas daftar!
-            currentUserEmail = newUser.email
-            currentUser = newUser
-            regError = ""
-            currentScreen = Screen.Dashboard
-            
-            // clear inputs
-            regEmail = ""
-            regUsername = ""
-            regPassword = ""
-            regFullname = ""
+            val response = repository.apiRegister(request)
+            if (response.status == "success") {
+                // Auto login selepas berjaya daftar
+                loginEmail = regEmail.trim()
+                loginPassword = regPassword
+                processLogin()
+                
+                // Kosongkan form daftar
+                regEmail = ""
+                regUsername = ""
+                regPassword = ""
+                regFullname = ""
+            } else {
+                regError = response.message ?: "Ralat semasa mendaftar"
+            }
         }
     }
 
     fun processLogout() {
+        sessionManager.clearSession()
         currentUserEmail = null
         currentUser = null
         currentScreen = Screen.Login
@@ -242,7 +281,6 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
         
         viewModelScope.launch {
             try {
-                // Beri kesan GPS beralun rawak di sekitar Malaysia demi kepelbagaian tanda peta!
                 val randomLat = 2.2 + (0.05 * (0..30).random()) - 0.7
                 val randomLng = 101.4 + (0.05 * (0..30).random()) + 0.3
                 
@@ -253,7 +291,34 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
                     randomLng,
                     presetCloneId
                 )
-                predictionResult = result
+                
+                // Simpan fail imej sementara untuk dimuat naik
+                val tempFile = File(getApplication<Application>().cacheDir, "temp_scan_${System.currentTimeMillis()}.jpg")
+                FileOutputStream(tempFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                }
+                
+                // Muat naik ke backend server
+                val apiResponse = repository.apiUploadScan(result, tempFile)
+                
+                if (tempFile.exists()) tempFile.delete()
+                
+                val finalRecord = if (apiResponse?.status == "success" && apiResponse.data != null) {
+                    val remoteId = apiResponse.data.id
+                    val remoteImgUrl = apiResponse.data.image_url
+                    
+                    val syncedRecord = result.copy(
+                        id = remoteId,
+                        imageUrl = remoteImgUrl
+                    )
+                    repository.insertAnalysis(syncedRecord)
+                    syncedRecord
+                } else {
+                    repository.insertAnalysis(result)
+                    result
+                }
+                
+                predictionResult = finalRecord
             } catch (e: Exception) {
                 Log.e(TAG, "Ralat ketika menganalisis imej: ${e.message}")
             } finally {
@@ -286,6 +351,7 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
     // === Action: Delete History Item ===
     fun deleteHistoryRecord(record: AnalysisEntity) {
         viewModelScope.launch {
+            repository.apiDeleteScan(record.id)
             repository.deleteAnalysisById(record.id)
             if (activeReportRecord?.id == record.id) {
                 activeReportRecord = null
@@ -296,10 +362,8 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
     // === Action: Clear All History ===
     fun clearHistory(email: String) {
         viewModelScope.launch {
-            val currentList = analysesForUser.value
-            currentList.forEach {
-                repository.deleteAnalysisById(it.id)
-            }
+            repository.apiClearScans()
+            repository.clearHistory(email)
             activeReportRecord = null
         }
     }
