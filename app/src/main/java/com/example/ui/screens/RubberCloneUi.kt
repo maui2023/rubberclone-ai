@@ -50,6 +50,7 @@ import com.example.data.CloneInfo
 import com.example.data.UserEntity
 import com.example.ui.RubberCloneViewModel
 import com.example.ui.Screen
+import coil.compose.AsyncImage
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -128,9 +129,11 @@ fun SplashScreen(onTimeout: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(24.dp)
         ) {
-            Image(
-                painter = painterResource(id = com.example.R.drawable.risda_logo),
+            AsyncImage(
+                model = "https://rubberclone-ai.pats.my/assets/images/risda_logo.jpg",
                 contentDescription = "RISDA Logo",
+                placeholder = painterResource(id = com.example.R.drawable.risda_logo),
+                error = painterResource(id = com.example.R.drawable.risda_logo),
                 modifier = Modifier
                     .size(140.dp)
                     .clip(CircleShape)
@@ -211,9 +214,11 @@ fun LoginScreen(viewModel: RubberCloneViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Image(
-                painter = painterResource(id = com.example.R.drawable.risda_logo),
+            AsyncImage(
+                model = "https://rubberclone-ai.pats.my/assets/images/risda_logo.jpg",
                 contentDescription = "RISDA Logo",
+                placeholder = painterResource(id = com.example.R.drawable.risda_logo),
+                error = painterResource(id = com.example.R.drawable.risda_logo),
                 modifier = Modifier
                     .size(100.dp)
                     .clip(CircleShape)
@@ -1226,6 +1231,45 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
     val context = LocalContext.current
     var isMockPermissionActive by remember { mutableStateOf(true) }
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        if (fineGranted || coarseGranted) {
+            viewModel.initGpsTracking()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasFine && !hasCoarse) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        } else {
+            viewModel.initGpsTracking()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.stopGpsTracking()
+        }
+    }
+
+    var photoFile by remember { mutableStateOf<java.io.File?>(null) }
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+
     // Memuat naik imej menggunakan pemilih Android Intent
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1239,20 +1283,40 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
                     viewModel.analyzeLeafImage(bitmap)
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Sila pastikan format fail betul.", Toast.LENGTH_SHORT).show()
+                android.util.Log.e("LeafScanner", "Ralat memuatkan imej dari galeri: ${e.message}", e)
+                Toast.makeText(context, "Ralat galeri: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // Capture imej mock menggunakan kamera (Menghasilkan bitmap rawak getah)
+    // Capture imej menggunakan kamera (Menyimpan gambar sebenar)
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap: Bitmap? ->
-        if (bitmap != null) {
-            viewModel.leafScanSource = "Guna Gambar"
-            viewModel.analyzeLeafImage(bitmap)
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success && photoFile != null) {
+            try {
+                val bitmap = BitmapFactory.decodeFile(photoFile!!.absolutePath)
+                if (bitmap != null) {
+                    viewModel.leafScanSource = "Guna Gambar"
+                    viewModel.analyzeLeafImage(bitmap)
+                } else {
+                    // Fallback jika decode gagal
+                    val width = 400
+                    val height = 400
+                    val conf = Bitmap.Config.ARGB_8888
+                    val mockBitmap = Bitmap.createBitmap(width, height, conf)
+                    val canvas = android.graphics.Canvas(mockBitmap)
+                    val paint = android.graphics.Paint()
+                    paint.color = android.graphics.Color.parseColor("#10B981")
+                    canvas.drawRect(0f, 0f, 400f, 400f, paint)
+                    viewModel.leafScanSource = "Guna Gambar"
+                    viewModel.analyzeLeafImage(mockBitmap)
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Ralat membaca imej kamera: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         } else {
-            // Jika dalam emulator tiada kamera fizikal, mari jana canvas bitmap getah rawak untuk kemudahan!
+            // Jika dibatalkan atau tiada kamera (Emulator)
             val width = 400
             val height = 400
             val conf = Bitmap.Config.ARGB_8888
@@ -1272,7 +1336,19 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            cameraLauncher.launch(null)
+            try {
+                val file = java.io.File(context.cacheDir, "camera_photo_${System.currentTimeMillis()}.jpg")
+                photoFile = file
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                photoUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Gagal menyediakan fail kamera: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         } else {
             Toast.makeText(context, "Kebenaran kamera diperlukan untuk mengambil gambar di lapangan.", Toast.LENGTH_SHORT).show()
         }
@@ -1285,7 +1361,19 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         
         if (hasPermission) {
-            cameraLauncher.launch(null)
+            try {
+                val file = java.io.File(context.cacheDir, "camera_photo_${System.currentTimeMillis()}.jpg")
+                photoFile = file
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                photoUri = uri
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Gagal menyediakan fail kamera: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         } else {
             permissionLauncher.launch(android.Manifest.permission.CAMERA)
         }
@@ -1312,6 +1400,82 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 20.dp)
             )
+        }
+
+        // GPS Status
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (viewModel.isGpsReady) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    } else {
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                    }
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (viewModel.isGpsReady) Icons.Default.Place else Icons.Default.Warning,
+                        contentDescription = "GPS Status",
+                        tint = if (viewModel.isGpsReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (viewModel.isGpsReady) {
+                            val latStr = String.format(java.util.Locale.US, "%.4f", viewModel.gpsLatitude)
+                            val lngStr = String.format(java.util.Locale.US, "%.4f", viewModel.gpsLongitude)
+                            "GPS Bersedia: Lat: $latStr, Lng: $lngStr"
+                        } else {
+                            viewModel.gpsError ?: "Menunggu isyarat GPS..."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (viewModel.isGpsReady) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+
+        // Paparan Ralat Analisis (jika ada)
+        if (viewModel.analysisError != null) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Error",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = viewModel.analysisError!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
         }
 
         // Kamera Scan Viewfinder (Simulated beautiful graphical container)
@@ -1465,7 +1629,7 @@ fun LeafScannerScreen(viewModel: RubberCloneViewModel) {
                     val bitmap = Bitmap.createBitmap(width, height, conf)
                     // Hantar isian pratetap ke VM
                     viewModel.leafScanSource = "Sampel"
-                    viewModel.analyzeLeafImage(bitmap, presetCloneId = clone.id)
+                    viewModel.analyzeLeafImage(bitmap)
                 },
                 modifier = Modifier
                     .fillMaxWidth()

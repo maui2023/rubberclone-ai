@@ -3,23 +3,34 @@ package com.example.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.api.*
 import androidx.compose.runtime.snapshotFlow
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -84,10 +95,15 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
     var predictionResult by mutableStateOf<AnalysisEntity?>(null)
     var scanBitmap by mutableStateOf<Bitmap?>(null)
     var leafScanSource by mutableStateOf<String>("Guna Gambar") // "Guna Gambar", "Sampel"
+    var analysisError by mutableStateOf<String?>(null)
 
-    // Moking GPS defaults
-    var activeLatitude by mutableStateOf(2.9348) // RISDA HQ Putrajaya region/HQ KL
-    var activeLongitude by mutableStateOf(101.6911)
+    // === GPS Sebenar ===
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var locationCallback: LocationCallback? = null
+    var gpsLatitude by mutableStateOf(0.0)
+    var gpsLongitude by mutableStateOf(0.0)
+    var isGpsReady by mutableStateOf(false)
+    var gpsError by mutableStateOf<String?>(null)
 
     // === Recommendation State ===
     var isRecommending by mutableStateOf(false)
@@ -106,6 +122,9 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
     var activeReportRecord by mutableStateOf<AnalysisEntity?>(null)
 
     init {
+        // Mulakan penjejak GPS sebenar
+        initGpsTracking()
+
         // Semak session sedia ada pada permulaan
         val savedEmail = sessionManager.fetchUserEmail()
         val savedToken = sessionManager.fetchAuthToken()
@@ -256,30 +275,147 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
         currentScreen = Screen.Login
     }
 
-    // === AI Analysis Processing ===
-    fun analyzeLeafImage(bitmap: Bitmap, presetCloneId: String? = null) {
+    // === Semakan Sambungan Internet ===
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getApplication<Application>()
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    // === GPS Sebenar: Inisialisasi & Henti ===
+    fun initGpsTracking() {
+        stopGpsTracking()
+        val app = getApplication<Application>()
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(app)
+
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            app, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            app, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasFineLocation && !hasCoarseLocation) {
+            gpsError = "Kebenaran lokasi belum diberikan. Sila benarkan akses lokasi."
+            Log.w(TAG, "Location permissions not granted")
+            return
+        }
+
+        try {
+            // Cuba dapatkan lokasi terakhir dulu
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    gpsLatitude = location.latitude
+                    gpsLongitude = location.longitude
+                    isGpsReady = true
+                    gpsError = null
+                    Log.d(TAG, "GPS lokasi terakhir: $gpsLatitude, $gpsLongitude")
+                }
+            }
+
+            // Minta kemas kini lokasi berterusan
+            val locationRequest = LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY, 10000L
+            ).setMinUpdateIntervalMillis(5000L).build()
+
+            locationCallback = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    val location = result.lastLocation
+                    if (location != null) {
+                        gpsLatitude = location.latitude
+                        gpsLongitude = location.longitude
+                        isGpsReady = true
+                        gpsError = null
+                    }
+                }
+            }
+
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback!!,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            gpsError = "Ralat kebenaran lokasi: ${e.message}"
+            Log.e(TAG, "GPS SecurityException: ${e.message}")
+        }
+    }
+
+    fun stopGpsTracking() {
+        locationCallback?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopGpsTracking()
+    }
+
+    private fun scaleBitmapDown(bitmap: Bitmap, maxDimension: Int): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        var newWidth = width
+        var newHeight = height
+
+        if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+                newWidth = maxDimension
+                newHeight = (maxDimension * height / width.toFloat()).toInt()
+            } else {
+                newHeight = maxDimension
+                newWidth = (maxDimension * width / height.toFloat()).toInt()
+            }
+        }
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    // === AI Analysis Processing (GPS Sebenar + Gemini API Sahaja) ===
+    fun analyzeLeafImage(bitmap: Bitmap) {
         val email = currentUserEmail ?: return
+        analysisError = null
+
+        // Semak sambungan internet sebelum mula
+        if (!isNetworkAvailable()) {
+            analysisError = "Tiada sambungan internet. Sila sambung ke WiFi atau data mudah alih untuk menganalisis imej."
+            return
+        }
+
+        // Semak GPS sebenar
+        if (!isGpsReady) {
+            analysisError = "GPS belum sedia. Sila pastikan perkhidmatan lokasi dihidupkan dan kebenaran diberikan."
+            return
+        }
+
         isAnalyzing = true
         predictionResult = null
         scanBitmap = bitmap
         
         viewModelScope.launch {
             try {
-                val randomLat = 2.2 + (0.05 * (0..30).random()) - 0.7
-                val randomLng = 101.4 + (0.05 * (0..30).random()) + 0.3
+                val currentLat = gpsLatitude
+                val currentLng = gpsLongitude
+                
+                val optimizedBitmap = scaleBitmapDown(bitmap, 1024)
                 
                 val result = repository.analyzeLeaf(
-                    bitmap,
+                    optimizedBitmap,
                     email,
-                    randomLat,
-                    randomLng,
-                    presetCloneId
+                    currentLat,
+                    currentLng
                 )
+
+                if (result == null) {
+                    analysisError = "Analisis AI gagal. Sila pastikan sambungan internet aktif dan GEMINI_API_KEY sah."
+                    return@launch
+                }
                 
                 // Simpan fail imej sementara untuk dimuat naik
                 val tempFile = File(getApplication<Application>().cacheDir, "temp_scan_${System.currentTimeMillis()}.jpg")
                 FileOutputStream(tempFile).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    optimizedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                 }
                 
                 // Muat naik ke backend server
@@ -298,13 +434,16 @@ class RubberCloneViewModel(application: Application) : AndroidViewModel(applicat
                     repository.insertAnalysis(syncedRecord)
                     syncedRecord
                 } else {
+                    // Simpan ke DB tempatan walaupun backend gagal
                     repository.insertAnalysis(result)
                     result
                 }
                 
                 predictionResult = finalRecord
+                analysisError = null
             } catch (e: Exception) {
                 Log.e(TAG, "Ralat ketika menganalisis imej: ${e.message}")
+                analysisError = "Ralat tidak dijangka: ${e.message}"
             } finally {
                 isAnalyzing = false
             }

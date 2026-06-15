@@ -49,43 +49,22 @@ class RubberCloneRepository(
         dao.updateUser(user)
     }
 
-    // === Core Logic: Leaf Image Classification ===
+    // === Core Logic: Leaf Image Classification (Gemini AI Sahaja) ===
     suspend fun analyzeLeaf(
         bitmap: Bitmap,
         userId: String,
         latitude: Double,
-        longitude: Double,
-        offlinePresetCloneId: String? = null // Guna klon sampel jika emulator dicetuskan
-    ): AnalysisEntity {
-        Log.d(TAG, "Memulakan analisis imej daun...")
+        longitude: Double
+    ): AnalysisEntity? {
+        Log.d(TAG, "Memulakan analisis imej daun melalui Gemini AI...")
 
-        // Jika sampel pratetap ditentukan (untuk tujuan ujian lancar di emulator)
-        if (offlinePresetCloneId != null) {
-            val clone = CloneInfo.getCloneById(offlinePresetCloneId) ?: CloneInfo.defaultClones[0]
-            val record = AnalysisEntity(
-                userId = userId,
-                cloneName = clone.name,
-                confidence = (88..97).random() / 100f,
-                latitude = latitude,
-                longitude = longitude,
-                locationName = "Pusat RISDA Wilayah, Lat: $latitude, Lng: $longitude",
-                notes = "[Imbasan Pratetap Emulator] ${clone.description}",
-                soilType = clone.soilSuitability,
-                rainfall = clone.annualRainfallNeeded,
-                elevation = clone.maxElevation
-            )
-            return record
-        }
-
-        // Jalankan panggilan Gemini API secara atas talian
+        // Jalankan panggilan Gemini API — tiada fallback palsu
         val apiResult = GeminiClient.analyzeLeafImage(bitmap)
         if (apiResult != null) {
             try {
-                val cloneId = apiResult.optString("clone_id", "rrim_2025")
                 val cloneName = apiResult.optString("clone_name", "RRIM 2025")
                 val confidence = apiResult.optDouble("confidence", 0.90).toFloat()
                 val notes = apiResult.optString("notes", "Berjaya dikenal pasti.")
-                val disease = apiResult.optString("disease_status", "Sangat Tinggi")
                 val soil = apiResult.optString("soil_suitability", "Pelbagai")
                 val rainfallNeeded = apiResult.optString("rainfall_needed", "2,000 - 2,800 mm")
                 val maxElev = apiResult.optString("max_elevation", "350 meter")
@@ -96,7 +75,7 @@ class RubberCloneRepository(
                     confidence = confidence,
                     latitude = latitude,
                     longitude = longitude,
-                    locationName = "Kawasan Pekebun Kecil RISDA",
+                    locationName = "Kawasan Pekebun Kecil RISDA, Lat: ${String.format("%.4f", latitude)}, Lng: ${String.format("%.4f", longitude)}",
                     notes = notes,
                     soilType = soil,
                     rainfall = rainfallNeeded,
@@ -104,26 +83,14 @@ class RubberCloneRepository(
                 )
                 return record
             } catch (e: Exception) {
-                Log.e(TAG, "Ralat parsing data Gemini: ${e.message}. Menggunakan enjin luar talian.")
+                Log.e(TAG, "Ralat parsing data Gemini: ${e.message}")
+                return null
             }
         }
 
-        // Fallback Luar Talian (Heuristic Statistical Engine) jika tiada API key / ralat rangkaian
-        val randomClone = CloneInfo.defaultClones.random()
-        val mockConfidence = 0.82f + (0.01f * (0..15).random())
-        val mockRecord = AnalysisEntity(
-            userId = userId,
-            cloneName = randomClone.name,
-            confidence = mockConfidence,
-            latitude = latitude,
-            longitude = longitude,
-            locationName = "Imbasan Luar Talian (Gps Sempurna)",
-            notes = "[Enjin Analisis Luar Talian RISDA] Struktur daun getah dikesan lebar bertekstur licin, sangat sepadan dengan heritaj genetik " + randomClone.name + ". " + randomClone.description,
-            soilType = randomClone.soilSuitability,
-            rainfall = randomClone.annualRainfallNeeded,
-            elevation = randomClone.maxElevation
-        )
-        return mockRecord
+        // Tiada fallback — kembalikan null supaya pengguna tahu analisis gagal
+        Log.w(TAG, "Gemini API gagal atau tiada API key. Tiada data palsu dijana.")
+        return null
     }
 
     // === Core Logic: Cadangan Klon Pintar ===

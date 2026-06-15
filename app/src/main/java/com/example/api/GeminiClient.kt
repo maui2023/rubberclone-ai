@@ -33,11 +33,86 @@ object GeminiClient {
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
+    private suspend fun analyzeLeafImageOllamaBackup(bitmap: Bitmap): JSONObject? = withContext(Dispatchers.IO) {
+        Log.i(TAG, "Mencuba sambungan ke Ollama backup AI (192.168.1.50:11434)...")
+        val ollamaUrl = "http://192.168.1.50:11434/api/generate"
+        val modelName = "gemma4:e4b"
+        
+        val prompt = """
+            You are an expert rubber tree agronomist specialized in Hevea brasiliensis (pokok getah) for RISDA Malaysia.
+            Analyze the provided image of a rubber tree leaf and identify which of these standard RISDA clones it matches best:
+            1. RRIM 2025 (RRIM 2000 Series, yield 2500-3000 kg/ha/yr)
+            2. PB 260 (Prang Besar Series, yield 2000-2500 kg/ha/yr)
+            3. RRIM 3001 (RRIM 3000 Series, yield 2800-3200 kg/ha/yr)
+            4. RRIM 600 (Modern Heritage, yield 1500-1800 kg/ha/yr)
+            5. PR 255 (PR Series, yield 1800-2200 kg/ha/yr)
+            
+            Return your response STRICTLY as a single valid JSON object. Do not wrap in markdown or anything else.
+            Syntax template:
+            {
+               "clone_id": "rrim_2025", 
+               "clone_name": "RRIM 2025",
+               "series": "RRIM 2000 Series",
+               "confidence": 0.94,
+               "notes": "Analisis imej menunjukkan urat daun tebal beralun tipikal bagi klon ini dengan darjah kilauan sederhana...",
+               "disease_status": "Sangat Tinggi (Rintang Corynespora & Oidium)",
+               "soil_suitability": "Tanah Lempung Pasir (Sandy Clay) & Tanah Lateral Kelikir",
+               "rainfall_needed": "2,000 - 2,800 mm",
+               "max_elevation": "350 meter"
+            }
+            Do not include any text other than the raw JSON object. Use Bahasa Melayu for the notes/description.
+        """.trimIndent()
+
+        try {
+            val base64Image = bitmap.toBase64()
+            
+            val requestJson = JSONObject().apply {
+                put("model", modelName)
+                put("prompt", prompt)
+                put("stream", false)
+                put("format", "json")
+                put("images", JSONArray().put(base64Image))
+            }
+            
+            val requestBody = requestJson.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url(ollamaUrl)
+                .post(requestBody)
+                .build()
+                
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Ollama request failed: ${response.code} / ${response.message}")
+                    return@withContext null
+                }
+                val bodyText = response.body?.string() ?: return@withContext null
+                Log.d(TAG, "Ollama response body raw: $bodyText")
+                
+                val responseJson = JSONObject(bodyText)
+                val responseText = responseJson.optString("response", "")
+                
+                var trimmed = responseText.trim()
+                if (trimmed.startsWith("```json")) {
+                    trimmed = trimmed.removePrefix("```json")
+                }
+                if (trimmed.endsWith("```")) {
+                    trimmed = trimmed.removeSuffix("```")
+                }
+                trimmed = trimmed.trim()
+                
+                return@withContext JSONObject(trimmed)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error invoking Ollama backup API: ${e.message}", e)
+            null
+        }
+    }
+
     suspend fun analyzeLeafImage(bitmap: Bitmap): JSONObject? = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            Log.w(TAG, "API Key is empty or placeholder! Skipping live Gemini API call.")
-            return@withContext null
+            Log.w(TAG, "API Key is empty or placeholder! Attempting Ollama fallback directly.")
+            return@withContext analyzeLeafImageOllamaBackup(bitmap)
         }
 
         val prompt = """
@@ -102,19 +177,30 @@ object GeminiClient {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "Request failed: ${response.code} / ${response.message}")
-                    return@withContext null
+                    Log.e(TAG, "Gemini Request failed: ${response.code} / ${response.message}. Attempting Ollama fallback.")
+                    return@withContext analyzeLeafImageOllamaBackup(bitmap)
                 }
-                val bodyText = response.body?.string() ?: return@withContext null
+                val bodyText = response.body?.string() ?: return@withContext analyzeLeafImageOllamaBackup(bitmap)
                 Log.d(TAG, "Response body raw: $bodyText")
 
                 val responseJson = JSONObject(bodyText)
-                val candidates = responseJson.optJSONArray("candidates") ?: return@withContext null
-                if (candidates.length() == 0) return@withContext null
+                if (responseJson.has("error")) {
+                    Log.e(TAG, "Gemini response contains error. Attempting Ollama fallback.")
+                    return@withContext analyzeLeafImageOllamaBackup(bitmap)
+                }
+
+                val candidates = responseJson.optJSONArray("candidates") ?: run {
+                    Log.e(TAG, "No candidates in Gemini response. Attempting Ollama fallback.")
+                    return@withContext analyzeLeafImageOllamaBackup(bitmap)
+                }
+                if (candidates.length() == 0) {
+                    Log.e(TAG, "Candidates array is empty in Gemini response. Attempting Ollama fallback.")
+                    return@withContext analyzeLeafImageOllamaBackup(bitmap)
+                }
                 val firstCandidate = candidates.getJSONObject(0)
-                val content = firstCandidate.optJSONObject("content") ?: return@withContext null
-                val parts = content.optJSONArray("parts") ?: return@withContext null
-                if (parts.length() == 0) return@withContext null
+                val content = firstCandidate.optJSONObject("content") ?: return@withContext analyzeLeafImageOllamaBackup(bitmap)
+                val parts = content.optJSONArray("parts") ?: return@withContext analyzeLeafImageOllamaBackup(bitmap)
+                if (parts.length() == 0) return@withContext analyzeLeafImageOllamaBackup(bitmap)
                 val textResponse = parts.getJSONObject(0).optString("text", "")
 
                 var trimmed = textResponse.trim()
@@ -129,8 +215,8 @@ object GeminiClient {
                 return@withContext JSONObject(trimmed)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error invoking Gemini API: ${e.message}", e)
-            return@withContext null
+            Log.e(TAG, "Error invoking Gemini API: ${e.message}. Attempting Ollama fallback.", e)
+            return@withContext analyzeLeafImageOllamaBackup(bitmap)
         }
     }
 
